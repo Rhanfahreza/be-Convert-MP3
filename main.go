@@ -11,7 +11,6 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
-	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/google/uuid"
 )
 
@@ -133,10 +132,39 @@ func main() {
 
 	app := fiber.New(fiber.Config{
 		ServerHeader: "Fiber-v3",
-		AppName:      "Convert-MP3",
+		AppName:      "beConvert-MP3",
 	})
 
-	app.Use(cors.New())
+	origins := os.Getenv("ALLOWED_ORIGINS")
+	allowOriginsList := []string{"*"}
+	if origins != "" {
+		allowOriginsList = strings.Split(origins, ",")
+	}
+
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: allowOriginsList,
+		AllowHeaders: []string{"Origin, Content-Type, Accept, Authorization"},
+		AllowMethods: []string{"GET, POST, HEAD, OPTIONS"},
+	}))
+
+	// Root API Info
+	app.Get("/", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"service": "beConvert-MP3",
+			"status":  "running",
+			"lan_ip":  getLocalIP(),
+			"endpoints": []string{
+				"/api/network",
+				"/api/convert",
+				"/api/download/:task_id",
+			},
+		})
+	})
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8000"
+	}
 
 	// API: Get Network / LAN Info
 	app.Get("/api/network", func(c fiber.Ctx) error {
@@ -274,22 +302,14 @@ func main() {
 		return c.Download(targetPath, targetName)
 	})
 
-	// Static files: React TypeScript Frontend (Vite build)
-	app.Use("/", static.New("./frontend/dist"))
-
-	// Fallback to React index.html for SPA routing
-	app.Get("/*", func(c fiber.Ctx) error {
-		return c.SendFile("./frontend/dist/index.html")
-	})
-
 	ip := getLocalIP()
 	fmt.Println("==========================================================")
-	fmt.Println(" Go Fiber v3 Server Running (Serving React TypeScript)!")
-	fmt.Println(" Access locally  : http://localhost:8000")
-	fmt.Printf(" Access from phone: http://%s:8000\n", ip)
+	fmt.Printf(" beConvert-MP3 (Go Fiber v3 API) Running on port %s!\n", port)
+	fmt.Printf(" Access locally  : http://localhost:%s\n", port)
+	fmt.Printf(" Access from phone: http://%s:%s\n", ip, port)
 	fmt.Println("==========================================================")
 
-	if err := app.Listen(":8000"); err != nil {
+	if err := app.Listen(":" + port); err != nil {
 		fmt.Printf("Server error: %v\n", err)
 	}
 }

@@ -1,0 +1,12 @@
+# Binary
+server
+
+# Temporary downloads
+downloads/
+
+# Local env
+.env
+.env.local
+
+# OS files
+.DS_Store
