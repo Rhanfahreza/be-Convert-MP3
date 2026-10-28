@@ -1,12 +1,16 @@
-# fly.toml app configuration file generated for beConvert-MP3
-app = "be-convert-mp3"
-primary_region = "sin"
+# fly.toml app configuration file generated for be-convert-mp3 on 2026-10-28T04:34:19Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'be-convert-mp3'
+primary_region = 'sin'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  PORT = "8080"
+  PORT = '8080'
 
 [http_service]
   internal_port = 8080
