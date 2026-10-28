@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="id" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Audio Converter — YouTube & TikTok to MP3</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: [
+                "Geist",
+                "-apple-system",
+                "BlinkMacSystemFont",
+                "Segoe UI",
+                "Roboto",
+                "sans-serif",
+              ],
+              mono: ["Geist Mono", "ui-monospace", "monospace"],
+            },
+            colors: {
+              surface: {
+                DEFAULT: "#09090b",
+                subtle: "#121215",
+                card: "#18181b",
+                border: "#27272a",
+                hover: "#222226",
+              },
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        background-color: #09090b;
+        color: #fafafa;
+      }
+      input::placeholder {
+        color: #52525b;
+      }
+    </style>
+  </head>
+  <body
+    class="min-h-screen flex flex-col font-sans selection:bg-zinc-800 selection:text-white"
+  >
+    <!-- Top Navigation / Utility Bar -->
+    <header
+      class="border-b border-surface-border/80 px-6 py-4 flex items-center justify-between"
+    >
+      <div class="flex items-center gap-3">
+        <div
+          class="w-7 h-7 rounded-lg bg-zinc-100 text-zinc-950 flex items-center justify-center font-mono font-bold text-xs tracking-tight shadow-sm"
+        >
+          MP3
+        </div>
+        <div>
+          <span class="text-sm font-semibold tracking-tight text-zinc-100"
+            >Audio Extractor</span
+          >
+          <span class="text-xs text-zinc-500 font-mono ml-2 hidden sm:inline"
+            >v1.0</span
+          >
+        </div>
+      </div>
+
+      <!-- Phone Access Chip -->
+      <div class="flex items-center gap-2">
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-subtle border border-surface-border text-xs text-zinc-400 font-mono"
+        >
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+          <span class="hidden md:inline text-zinc-500 font-sans">HP:</span>
+          <span class="text-zinc-200">http://{{PRIMARY_IP}}:8000</span>
+        </div>
+        <button
+          onclick="copyLanAddress('http://{{PRIMARY_IP}}:8000')"
+          title="Salin alamat URL untuk dibuka di HP"
+          class="h-7 px-2.5 rounded-md bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-xs text-zinc-200 transition-colors flex items-center gap-1"
+        >
+          <svg
+            class="w-3.5 h-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path
+              d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+            ></path>
+          </svg>
+          <span class="hidden sm:inline">Salin</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main
+      class="flex-1 flex flex-col justify-center px-4 py-12 max-w-2xl mx-auto w-full"
+    >
+      <div class="mb-8">
+        <h1 class="text-2xl font-semibold tracking-tight text-zinc-100">
+          Konversi ke MP3
+        </h1>
+        <p class="text-sm text-zinc-400 mt-1">
+          Ekstrak audio dari YouTube & TikTok berkualitas tinggi ke format MP3.
+        </p>
+      </div>
+
+      <!-- Converter Form -->
+      <form id="convertForm" onsubmit="handleConvert(event)" class="space-y-4">
+        <!-- Unified Input Box -->
+        <div
+          class="rounded-xl border border-surface-border bg-surface-subtle p-2 focus-within:border-zinc-500 transition-colors shadow-sm"
+        >
+          <div class="flex items-center gap-2 px-2 py-1">
+            <svg
+              class="w-4 h-4 text-zinc-500 flex-shrink-0"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
+              ></path>
+              <path
+                d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
+              ></path>
+            </svg>
+            <input
+              type="url"
+              id="urlInput"
+              required
+              placeholder="Masukkan link YouTube atau TikTok..."
+              class="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none"
+            />
+            <button
+              type="button"
+              onclick="pasteClipboard()"
+              class="text-xs px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors flex-shrink-0 font-medium"
+            >
+              Paste
+            </button>
+          </div>
+
+          <div
+            class="mt-2 pt-2 border-t border-surface-border/60 flex flex-wrap items-center justify-between gap-3 px-2"
+          >
+            <!-- Segmented Bitrate Control -->
+            <div
+              class="flex items-center gap-1 bg-surface-card p-1 rounded-lg border border-surface-border/80 text-xs"
+            >
+              <label class="text-[11px] text-zinc-500 px-1 font-mono uppercase"
+                >Bitrate:</label
+              >
+              <button
+                type="button"
+                onclick="setBitrate('192')"
+                id="btn-bitrate-192"
+                class="bitrate-opt px-2.5 py-1 rounded text-xs font-mono transition-colors bg-zinc-200 text-zinc-950 font-medium"
+              >
+                192k
+              </button>
+              <button
+                type="button"
+                onclick="setBitrate('320')"
+                id="btn-bitrate-320"
+                class="bitrate-opt px-2.5 py-1 rounded text-xs font-mono transition-colors text-zinc-400 hover:text-zinc-200"
+              >
+                320k
+              </button>
+              <button
+                type="button"
+                onclick="setBitrate('128')"
+                id="btn-bitrate-128"
+                class="bitrate-opt px-2.5 py-1 rounded text-xs font-mono transition-colors text-zinc-400 hover:text-zinc-200"
+              >
+                128k
+              </button>
+            </div>
+
+            <!-- Submit Button -->
+            <button
+              type="submit"
+              id="submitBtn"
+              class="h-8 px-4 bg-zinc-100 hover:bg-white active:bg-zinc-200 text-zinc-950 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+            >
+              <span id="btnText">Ekstrak & Unduh</span>
+              <svg
+                id="btnArrow"
+                class="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M5 12h14"></path>
+                <path d="M12 5l7 7-7 7"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <!-- Processing State -->
+      <div
+        id="processingBox"
+        class="hidden mt-6 rounded-xl border border-surface-border bg-surface-subtle p-4"
+      >
+        <div class="flex items-center gap-3">
+          <div
+            class="w-4 h-4 border-2 border-zinc-500 border-t-zinc-200 rounded-full animate-spin flex-shrink-0"
+          ></div>
+          <div class="flex-1 min-w-0">
+            <p id="procTitle" class="text-xs font-medium text-zinc-200">
+              Memproses media...
+            </p>
+            <p id="procSub" class="text-[11px] text-zinc-500 mt-0.5 font-mono">
+              Mengunduh stream & encoding MP3
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error State -->
+      <div
+        id="errorBox"
+        class="hidden mt-6 rounded-xl border border-red-900/60 bg-red-950/20 p-4 text-xs text-red-300"
+      >
+        <p class="font-medium text-red-200">Gagal mengonversi</p>
+        <p id="errorMsg" class="mt-1 text-red-400 font-mono text-[11px]"></p>
+      </div>
+
+      <!-- Result / Download Card -->
+      <div
+        id="resultCard"
+        class="hidden mt-6 rounded-xl border border-surface-border bg-surface-subtle p-4"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span class="text-xs text-zinc-400 font-mono">MP3 Siap</span>
+            </div>
+            <p
+              id="resultFileName"
+              class="text-sm font-medium text-zinc-100 truncate mt-1"
+            >
+              audio_file.mp3
+            </p>
+            <p
+              id="resultFileSize"
+              class="text-xs text-zinc-500 font-mono mt-0.5"
+            >
+              -- MB
+            </p>
+          </div>
+
+          <a
+            id="downloadLink"
+            href="#"
+            download
+            class="h-9 px-4 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-xs font-medium text-white transition-colors flex items-center gap-1.5 flex-shrink-0"
+          >
+            <svg
+              class="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Unduh Ulang</span>
+          </a>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer
+      class="border-t border-surface-border/60 px-6 py-4 text-center text-xs text-zinc-600 font-mono"
+    >
+      Localhost daemon — Temporary storage auto-cleaned
+    </footer>
+
+    <!-- Toast Notification -->
+    <div
+      id="toast"
+      class="fixed bottom-5 right-5 bg-zinc-100 text-zinc-950 font-medium text-xs px-3.5 py-2 rounded-md shadow-lg opacity-0 pointer-events-none transition-opacity duration-200"
+    >
+      Copied!
+    </div>
+
+    <script>
+      let selectedBitrate = "192";
+
+      function setBitrate(val) {
+        selectedBitrate = val;
+        ["192", "320", "128"].forEach((b) => {
+          const btn = document.getElementById(`btn-bitrate-${b}`);
+          if (b === val) {
+            btn.className =
+              "bitrate-opt px-2.5 py-1 rounded text-xs font-mono transition-colors bg-zinc-200 text-zinc-950 font-medium";
+          } else {
+            btn.className =
+              "bitrate-opt px-2.5 py-1 rounded text-xs font-mono transition-colors text-zinc-400 hover:text-zinc-200";
+          }
+        });
+      }
+
+      function showToast(text) {
+        const toast = document.getElementById("toast");
+        toast.innerText = text;
+        toast.classList.remove("opacity-0", "pointer-events-none");
+        setTimeout(() => {
+          toast.classList.add("opacity-0", "pointer-events-none");
+        }, 2000);
+      }
+
+      async function pasteClipboard() {
+        try {
+          const text = await navigator.clipboard.readText();
+          if (text) {
+            document.getElementById("urlInput").value = text;
+            showToast("Tautan ditempel");
+          }
+        } catch (e) {
+          showToast("Izin clipboard belum aktif di browser");
+        }
+      }
+
+      function copyLanAddress(addr) {
+        navigator.clipboard.writeText(addr).then(() => {
+          showToast("Alamat disalin");
+        });
+      }
+
+      async function handleConvert(e) {
+        e.preventDefault();
+        const urlInput = document.getElementById("urlInput");
+        const submitBtn = document.getElementById("submitBtn");
+        const btnText = document.getElementById("btnText");
+        const btnArrow = document.getElementById("btnArrow");
+        const procBox = document.getElementById("processingBox");
+        const errorBox = document.getElementById("errorBox");
+        const errorMsg = document.getElementById("errorMsg");
+        const resultCard = document.getElementById("resultCard");
+        const resultFileName = document.getElementById("resultFileName");
+        const resultFileSize = document.getElementById("resultFileSize");
+        const downloadLink = document.getElementById("downloadLink");
+
+        const url = urlInput.value.trim();
+        if (!url) return;
+
+        errorBox.classList.add("hidden");
+        resultCard.classList.add("hidden");
+        procBox.classList.remove("hidden");
+
+        submitBtn.disabled = true;
+        submitBtn.classList.add("opacity-60", "cursor-not-allowed");
+        btnText.innerText = "Mengonversi...";
+        btnArrow.classList.add("hidden");
+
+        try {
+          const response = await fetch("/api/convert", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              url: url,
+              bitrate: selectedBitrate,
+              embed_thumbnail: true,
+            }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.detail || "Terjadi kesalahan pada server");
+          }
+
+          procBox.classList.add("hidden");
+          resultFileName.innerText = data.filename;
+          resultFileSize.innerText = `${data.filesize} • ${selectedBitrate} kbps`;
+          downloadLink.href = data.download_url;
+          downloadLink.download = data.filename;
+          resultCard.classList.remove("hidden");
+
+          // Trigger native download
+          const a = document.createElement("a");
+          a.href = data.download_url;
+          a.download = data.filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+
+          showToast("Download dimulai");
+        } catch (err) {
+          procBox.classList.add("hidden");
+          errorMsg.innerText = err.message;
+          errorBox.classList.remove("hidden");
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.classList.remove("opacity-60", "cursor-not-allowed");
+          btnText.innerText = "Ekstrak & Unduh";
+          btnArrow.classList.remove("hidden");
+        }
+      }
+    </script>
+  </body>
+</html>
