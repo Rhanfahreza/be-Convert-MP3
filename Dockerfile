@@ -1,5 +1,7 @@
 # Stage 1: Build the static Go binary
-FROM golang:1.23-alpine AS builder
+FROM golang:alpine AS builder
+
+ENV GOTOOLCHAIN=auto
 
 WORKDIR /app
 
