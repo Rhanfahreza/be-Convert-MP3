@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,10 +13,41 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/gofiber/fiber/v3/middleware/limiter"
 	"github.com/google/uuid"
 )
 
-const downloadsDir = "downloads"
+const (
+	downloadsDir   = "downloads"
+	maxFileSize    = "100M"            // Batasi download maksimal 100MB agar disk laptop tidak penuh
+	processTimeout = 5 * time.Minute   // Timeout 5 menit untuk mencegah livestream/video 10 jam menggantung
+)
+
+// Semaphore untuk membatasi maksimal 2 proses konversi ffmpeg bersamaan
+// agar CPU laptop tidak drop/overheat
+var jobSemaphore = make(chan struct{}, 2)
+
+// Daftar domain media yang diperbolehkan (Whitelisting untuk proteksi total dari SSRF)
+var allowedDomains = []string{
+	"youtube.com",
+	"www.youtube.com",
+	"m.youtube.com",
+	"youtu.be",
+	"music.youtube.com",
+	"tiktok.com",
+	"www.tiktok.com",
+	"m.tiktok.com",
+	"vm.tiktok.com",
+	"vt.tiktok.com",
+	"instagram.com",
+	"www.instagram.com",
+	"soundcloud.com",
+	"m.soundcloud.com",
+	"twitter.com",
+	"x.com",
+	"facebook.com",
+	"fb.watch",
+}
 
 type ConvertRequest struct {
 	URL            string `json:"url"`
@@ -53,7 +86,6 @@ func getYtDlpPath() string {
 }
 
 func getLocalIP() string {
-	// 1. Try checking Wi-Fi interface via ip command
 	out, err := exec.Command("ip", "-4", "-o", "addr", "show", "scope", "global").Output()
 	if err == nil {
 		lines := strings.Split(string(out), "\n")
@@ -70,7 +102,6 @@ func getLocalIP() string {
 		}
 	}
 
-	// 2. Fallback: UDP dial trick to get outgoing IP
 	conn, err := net.Dial("udp", "1.1.1.1:80")
 	if err == nil {
 		defer conn.Close()
@@ -100,6 +131,58 @@ func formatBytes(bytes int64) string {
 	}
 }
 
+// Sanitasi dan validasi ketat URL untuk mencegah Argument Injection & SSRF
+func validateAndSanitizeURL(rawURL string) (string, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return "", fmt.Errorf("URL tidak boleh kosong")
+	}
+
+	// Mencegah argument injection jika ada input yang dimulai dengan '-'
+	if strings.HasPrefix(rawURL, "-") {
+		return "", fmt.Errorf("Format URL tidak valid")
+	}
+
+	parsed, err := url.ParseRequestURI(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("URL tidak valid")
+	}
+
+	// Wajib hanya http atau https
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", fmt.Errorf("Protokol hanya boleh HTTP atau HTTPS")
+	}
+
+	// Validasi hostname (Domain Allowlist)
+	hostname := strings.ToLower(parsed.Hostname())
+	if hostname == "" {
+		return "", fmt.Errorf("Hostname URL tidak valid")
+	}
+
+	// Blokir akses ke IP private/internal (Anti-SSRF)
+	if hostname == "localhost" || strings.HasPrefix(hostname, "127.") || hostname == "::1" ||
+		strings.HasPrefix(hostname, "192.168.") || strings.HasPrefix(hostname, "10.") ||
+		strings.HasPrefix(hostname, "172.") || strings.HasPrefix(hostname, "169.254.") {
+		return "", fmt.Errorf("Akses ke jaringan lokal/internal dilarang")
+	}
+
+	// Pastikan domain termasuk dalam platform yang didukung
+	isAllowed := false
+	for _, domain := range allowedDomains {
+		if hostname == domain || strings.HasSuffix(hostname, "."+domain) {
+			isAllowed = true
+			break
+		}
+	}
+
+	if !isAllowed {
+		return "", fmt.Errorf("Domain %s tidak didukung. Harap gunakan tautan YouTube, TikTok, atau platform resmi lainnya.", hostname)
+	}
+
+	return parsed.String(), nil
+}
+
 func startBackgroundCleanup() {
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
@@ -126,6 +209,15 @@ func startBackgroundCleanup() {
 	}()
 }
 
+func sanitizeErrorMessage(errStr string) string {
+	// Sembunyikan path direktori internal sistem
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		errStr = strings.ReplaceAll(errStr, home, "~")
+	}
+	return errStr
+}
+
 func main() {
 	_ = os.MkdirAll(downloadsDir, 0755)
 	startBackgroundCleanup()
@@ -133,6 +225,7 @@ func main() {
 	app := fiber.New(fiber.Config{
 		ServerHeader: "Fiber-v3",
 		AppName:      "beConvert-MP3",
+		BodyLimit:    64 * 1024, // Maksimal payload 64 KB (Mencegah serangan Memory Exhaustion)
 	})
 
 	origins := os.Getenv("ALLOWED_ORIGINS")
@@ -174,32 +267,62 @@ func main() {
 		})
 	})
 
+	// Rate limiter untuk endpoint convert: Maksimal 10 request per menit per IP
+	convertLimiter := limiter.New(limiter.Config{
+		Max:        10,
+		Expiration: 1 * time.Minute,
+		LimitReached: func(c fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(ErrorResponse{
+				Detail: "Terlalu banyak permintaan konversi. Tunggu 1 menit sebelum mencoba lagi.",
+			})
+		},
+	})
+
 	// API: Convert to MP3
-	app.Post("/api/convert", func(c fiber.Ctx) error {
+	app.Post("/api/convert", convertLimiter, func(c fiber.Ctx) error {
 		var req ConvertRequest
 		if err := c.Bind().JSON(&req); err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Detail: "Invalid JSON request"})
+			return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Detail: "Format JSON tidak valid"})
 		}
 
-		req.URL = strings.TrimSpace(req.URL)
-		if req.URL == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Detail: "URL tidak boleh kosong"})
+		// 1. Validasi & Sanitasi URL (Anti-SSRF & Anti Argument Injection)
+		cleanURL, err := validateAndSanitizeURL(req.URL)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Detail: err.Error()})
 		}
 
+		// 2. Validasi Bitrate (Whitelisting ketat)
 		bitrate := req.Bitrate
 		if bitrate != "128" && bitrate != "192" && bitrate != "320" {
 			bitrate = "192"
+		}
+
+		// 3. Batasi proses bersamaan (Anti-CPU Spikes / Anti-DoS)
+		select {
+		case jobSemaphore <- struct{}{}:
+			defer func() { <-jobSemaphore }()
+		default:
+			return c.Status(fiber.StatusTooManyRequests).JSON(ErrorResponse{
+				Detail: "Server sedang sibuk memproses antrean audio lain. Mohon tunggu sebentar lalu coba lagi.",
+			})
 		}
 
 		taskID := uuid.New().String()
 		taskDir := filepath.Join(downloadsDir, taskID)
 		if err := os.MkdirAll(taskDir, 0755); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
-				Detail: fmt.Sprintf("Gagal membuat folder: %v", err),
+				Detail: "Gagal mengalokasikan ruang kerja",
 			})
 		}
 
 		outputTemplate := filepath.Join(taskDir, "%(title)s.%(ext)s")
+
+		// 4. yt-dlp arguments dengan proteksi:
+		// - Menggunakan POSIX '--' sebelum URL agar input URL tidak bisa disisipi command flags
+		// - Batas ukuran maksimal file (--max-filesize)
+		// - Batas timeout eksekusi (CommandContext)
+		ctx, cancel := context.WithTimeout(context.Background(), processTimeout)
+		defer cancel()
 
 		args := []string{
 			"--no-playlist",
@@ -208,6 +331,7 @@ func main() {
 			"--audio-quality", bitrate,
 			"--add-metadata",
 			"--convert-thumbnails", "jpg",
+			"--max-filesize", maxFileSize,
 			"-o", outputTemplate,
 			"--retries", "3",
 		}
@@ -216,13 +340,20 @@ func main() {
 			args = append(args, "--embed-thumbnail")
 		}
 
-		args = append(args, req.URL)
+		// '--' memisahkan options dari positional arguments (URL) secara mutlak
+		args = append(args, "--", cleanURL)
 
 		ytDlpBinary := getYtDlpPath()
-		cmd := exec.Command(ytDlpBinary, args...)
+		cmd := exec.CommandContext(ctx, ytDlpBinary, args...)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			_ = os.RemoveAll(taskDir)
+			if ctx.Err() == context.DeadlineExceeded {
+				return c.Status(fiber.StatusRequestTimeout).JSON(ErrorResponse{
+					Detail: "Proses konversi melebihi batas waktu (maksimal 5 menit). Durasi media mungkin terlalu panjang.",
+				})
+			}
+
 			outStr := strings.TrimSpace(string(out))
 			lastErr := err.Error()
 			if outStr != "" {
@@ -236,11 +367,11 @@ func main() {
 				}
 			}
 			return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
-				Detail: fmt.Sprintf("yt-dlp error: %s", lastErr),
+				Detail: sanitizeErrorMessage(fmt.Sprintf("Error konversi: %s", lastErr)),
 			})
 		}
 
-		// Locate the generated .mp3 file
+		// Temukan file .mp3 yang dihasilkan
 		files, err := os.ReadDir(taskDir)
 		if err != nil || len(files) == 0 {
 			_ = os.RemoveAll(taskDir)
@@ -275,10 +406,23 @@ func main() {
 		})
 	})
 
-	// API: Download file
+	// API: Download file (Dilindungi dari Path Traversal)
 	app.Get("/api/download/:task_id", func(c fiber.Ctx) error {
 		taskID := c.Params("task_id")
+
+		// Validasi ketat format UUID (Mencegah Directory Traversal / Path Traversal)
+		if _, err := uuid.Parse(taskID); err != nil {
+			return c.Status(fiber.StatusBadRequest).SendString("Invalid Task ID")
+		}
+
 		taskDir := filepath.Join(downloadsDir, taskID)
+
+		// Verifikasi bahwa taskDir benar-benar berada di dalam downloadsDir
+		cleanBase, _ := filepath.Abs(downloadsDir)
+		cleanTarget, _ := filepath.Abs(taskDir)
+		if !strings.HasPrefix(cleanTarget, cleanBase) {
+			return c.Status(fiber.StatusForbidden).SendString("Access Denied")
+		}
 
 		files, err := os.ReadDir(taskDir)
 		if err != nil || len(files) == 0 {
@@ -304,7 +448,7 @@ func main() {
 
 	ip := getLocalIP()
 	fmt.Println("==========================================================")
-	fmt.Printf(" beConvert-MP3 (Go Fiber v3 API) Running on port %s!\n", port)
+	fmt.Printf(" beConvert-MP3 (Hardened & Protected) Running on port %s!\n", port)
 	fmt.Printf(" Access locally  : http://localhost:%s\n", port)
 	fmt.Printf(" Access from phone: http://%s:%s\n", ip, port)
 	fmt.Println("==========================================================")
