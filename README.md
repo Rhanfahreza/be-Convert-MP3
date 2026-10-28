@@ -1,23 +1,43 @@
-# Convert-MP3 (Go Fiber v3)
+# Convert-MP3 (Go Fiber v3 + React TypeScript)
 
-Aplikasi web berkecepatan tinggi berbasis **Go (Golang) Fiber v3** untuk mengekstrak & mengonversi audio dari TikTok & YouTube ke format MP3 berkualitas tinggi, kompatibel dengan smartwatch (**Huawei Watch Fit 4**).
+Aplikasi web modern untuk mengonversi audio dari TikTok & YouTube ke format MP3 berkualitas tinggi, siap diputar secara offline di smartwatch (**Huawei Watch Fit 4**).
 
 ## Tech Stack
-- **Framework**: [Fiber v3](https://github.com/gofiber/fiber/tree/v3) (v3.6.1) berbasis Fasthttp
-- **Language**: Go (Golang)
-- **Engine Unduhan & Tagging**: `yt-dlp` + `ffmpeg`
-- **UI**: Modern Minimalist Utility (Geist font + Tailwind CSS)
-- **Auto Cleanup**: Background Goroutine membersihkan file unduhan sementara setiap 5 menit.
+- **Frontend**: [React 18](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/) + [Vite](https://vitejs.dev/) + [Tailwind CSS](https://tailwindcss.com/) + [Lucide Icons](https://lucide.dev/)
+- **Backend**: [Go Fiber v3](https://github.com/gofiber/fiber/tree/v3) (v3.6.1)
+- **Audio Engine**: `yt-dlp` (standalone) + `ffmpeg`
+- **Networking**: Deteksi otomatis IP Wi-Fi untuk kemudahan akses dari browser smartphone.
+
+## Struktur Direktori
+```text
+Convert-MP3/
+├── downloads/            # Folder unduhan sementara (auto-clean tiap 5 menit)
+├── frontend/             # Frontend React 18 + Vite + TypeScript
+│   ├── src/
+│   │   ├── App.tsx       # Komponen utama React
+│   │   ├── main.tsx
+│   │   └── index.css
+│   ├── dist/             # Hasil build produksi React
+│   ├── package.json
+│   └── vite.config.ts
+├── go.mod                # Dependensi Go Fiber v3
+├── go.sum
+├── main.go               # Backend server Go Fiber v3
+├── server                # Binary executable mandiri Go
+├── start.sh              # Script run otomatis
+└── README.md
+```
 
 ## Cara Menjalankan
 
-Cukup jalankan script:
+Jalankan langsung script utama:
 ```bash
 ./start.sh
 ```
-Atau jalankan langsung:
+
+Untuk mode development frontend (Vite HMR):
 ```bash
-go run main.go
+cd frontend && bun run dev
 ```
 
 - Buka di laptop: [http://localhost:8000](http://localhost:8000)

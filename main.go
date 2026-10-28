@@ -11,6 +11,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/google/uuid"
 )
 
@@ -31,6 +32,11 @@ type ConvertResponse struct {
 
 type ErrorResponse struct {
 	Detail string `json:"detail"`
+}
+
+type NetworkResponse struct {
+	LanIP string `json:"lan_ip"`
+	Port  int    `json:"port"`
 }
 
 func getYtDlpPath() string {
@@ -132,21 +138,15 @@ func main() {
 
 	app.Use(cors.New())
 
-	// Route: Index HTML
-	app.Get("/", func(c fiber.Ctx) error {
-		content, err := os.ReadFile("templates/index.html")
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).SendString("Template tidak ditemukan")
-		}
-
-		ip := getLocalIP()
-		rendered := strings.ReplaceAll(string(content), "{{PRIMARY_IP}}", ip)
-
-		c.Set("Content-Type", "text/html; charset=utf-8")
-		return c.SendString(rendered)
+	// API: Get Network / LAN Info
+	app.Get("/api/network", func(c fiber.Ctx) error {
+		return c.JSON(NetworkResponse{
+			LanIP: getLocalIP(),
+			Port:  8000,
+		})
 	})
 
-	// Route: Convert to MP3
+	// API: Convert to MP3
 	app.Post("/api/convert", func(c fiber.Ctx) error {
 		var req ConvertRequest
 		if err := c.Bind().JSON(&req); err != nil {
@@ -247,7 +247,7 @@ func main() {
 		})
 	})
 
-	// Route: Download file
+	// API: Download file
 	app.Get("/api/download/:task_id", func(c fiber.Ctx) error {
 		taskID := c.Params("task_id")
 		taskDir := filepath.Join(downloadsDir, taskID)
@@ -274,9 +274,17 @@ func main() {
 		return c.Download(targetPath, targetName)
 	})
 
+	// Static files: React TypeScript Frontend (Vite build)
+	app.Use("/", static.New("./frontend/dist"))
+
+	// Fallback to React index.html for SPA routing
+	app.Get("/*", func(c fiber.Ctx) error {
+		return c.SendFile("./frontend/dist/index.html")
+	})
+
 	ip := getLocalIP()
 	fmt.Println("==========================================================")
-	fmt.Println(" Go Fiber v3 Server Running!")
+	fmt.Println(" Go Fiber v3 Server Running (Serving React TypeScript)!")
 	fmt.Println(" Access locally  : http://localhost:8000")
 	fmt.Printf(" Access from phone: http://%s:8000\n", ip)
 	fmt.Println("==========================================================")
